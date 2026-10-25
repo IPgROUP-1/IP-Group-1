@@ -1,14 +1,7 @@
 const bcrypt = require("bcryptjs");
-const jwt = require("jsonwebtoken");
 const { validationResult } = require("express-validator");
 const User = require("../models/User");
-
-const cookieOptions = (maxAge) => ({
-  httpOnly: true,
-  sameSite: "lax",
-  secure: process.env.NODE_ENV === "production",
-  maxAge,
-});
+const { issueTokens } = require("../utils/tokens");
 
 exports.register = async (req, res) => {
   const errors = validationResult(req);
@@ -26,11 +19,7 @@ exports.register = async (req, res) => {
     const passwordHash = await bcrypt.hash(password, 12);
     const user = await User.create({ name, email, passwordHash });
 
-    const accessToken = jwt.sign({ id: user._id, role: user.role }, process.env.JWT_SECRET, { expiresIn: "15m" });
-    const refreshToken = jwt.sign({ id: user._id }, process.env.JWT_REFRESH_SECRET, { expiresIn: "7d" });
-
-    res.cookie("accessToken", accessToken, cookieOptions(15 * 60 * 1000));
-    res.cookie("refreshToken", refreshToken, cookieOptions(7 * 24 * 60 * 60 * 1000));
+    issueTokens(res, user);
 
     res.status(201).json({
       user: { id: user._id, name: user.name, email: user.email, role: user.role },
@@ -39,4 +28,9 @@ exports.register = async (req, res) => {
     console.error(err);
     res.status(500).json({ message: "Server error" });
   }
+};
+
+exports.socialCallback = (req, res) => {
+  issueTokens(res, req.user);
+  res.redirect(process.env.CLIENT_URL);
 };
