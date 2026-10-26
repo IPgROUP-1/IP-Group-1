@@ -32,5 +32,5 @@ exports.register = async (req, res) => {
 
 exports.socialCallback = (req, res) => {
   issueTokens(res, req.user);
-  res.redirect(process.env.CLIENT_URL);
+  res.redirect(`${process.env.CLIENT_URL}/dashboard`);
 };
