@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Connexion | TeamFlow</title>
+  <style>
+    :root {font-family:Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif;color:#17223b;background:#f6f8fc}
+    *{box-sizing:border-box}
+    body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;background:radial-gradient(circle at 15% 12%,#dfe9ff,transparent 34%),radial-gradient(circle at 90% 90%,#e8dfff,transparent 35%),#f7f9fd}
+    .layout{width:min(980px,100%);min-height:580px;display:grid;grid-template-columns:1fr 1fr;background:#fff;border-radius:28px;overflow:hidden;box-shadow:0 28px 80px #182b5b1b}
+    .hero{background:linear-gradient(145deg,#2636b5,#6e56df);padding:56px 46px;color:white;display:flex;flex-direction:column;justify-content:space-between;position:relative;overflow:hidden}
+    .hero:after{content:"";width:330px;height:330px;position:absolute;bottom:-110px;right:-130px;border:60px solid #ffffff15;border-radius:50%}
+    .brand{display:flex;align-items:center;gap:12px;font-size:23px;font-weight:800;letter-spacing:-.6px;z-index:1}
+    .symbol{width:42px;height:42px;display:grid;place-items:center;background:#ffffff2b;border:1px solid #ffffff40;border-radius:13px;font-size:25px}
+    .headline{position:relative;z-index:1}.headline h1{font-size:clamp(32px,3.6vw,47px);line-height:1.12;letter-spacing:-1.8px;margin:0 0 22px}.headline p{line-height:1.7;color:#e4e6ff;font-size:16px;max-width:340px}
+    .copyright{position:relative;z-index:1;color:#dfdfff;font-size:13px}
+    .login{padding:65px 54px;display:flex;flex-direction:column;justify-content:center}
+    .eyebrow{font-weight:750;color:#6556d9;text-transform:uppercase;letter-spacing:1.6px;font-size:12px}
+    h2{font-size:32px;letter-spacing:-1px;margin:12px 0 8px}.subtitle{margin:0 0 36px;color:#71809b;font-size:14px;line-height:1.6}
+    label{display:block;font-size:13px;font-weight:700;margin:0 0 9px}
+    .field{margin-bottom:21px}.input-wrap{position:relative}.input-wrap input{width:100%;border:1px solid #dce2ee;background:#fbfcff;border-radius:12px;padding:15px 16px;font:inherit;font-size:14px;outline:none;transition:.2s}.input-wrap input:focus{border-color:#6b5de4;box-shadow:0 0 0 4px #6b5de41a}.password input{padding-right:74px}
+    .toggle{position:absolute;right:12px;top:50%;transform:translateY(-50%);background:none;border:0;color:#6556d9;font-size:12px;font-weight:700;cursor:pointer}
+    .submit{margin-top:4px;width:100%;border:0;background:#5648d5;color:white;padding:16px;border-radius:12px;font:inherit;font-weight:700;cursor:pointer;transition:.2s}.submit:hover{background:#4437be;transform:translateY(-1px)}.submit:disabled{opacity:.6;cursor:wait}
+    .message{font-size:13px;line-height:1.5;min-height:24px;margin:14px 0 0}.error{color:#c13544}.success{color:#18845a}
+    .foot{margin-top:35px;color:#94a0b5;text-align:center;font-size:12px}
+    @media(max-width:700px){.layout{grid-template-columns:1fr;max-width:440px;min-height:0}.hero{padding:27px 29px;min-height:152px}.hero .headline h1{font-size:23px;letter-spacing:-.5px;margin-top:22px;margin-bottom:0}.hero .headline p,.copyright{display:none}.login{padding:37px 29px 29px}h2{font-size:28px}.subtitle{margin-bottom:28px}}
+  </style>
+</head>
+<body>
+<main class="layout">
+  <section class="hero" aria-label="Présentation de TeamFlow">
+    <div class="brand"><span class="symbol" aria-hidden="true">✦</span> TeamFlow</div>
+    <div class="headline"><h1>Votre équipe.<br>Un seul espace.</h1><p>Organisez votre travail, collaborez plus facilement et avancez ensemble avec TeamFlow.</p></div>
+    <span class="copyright">© 2026 TeamFlow</span>
+  </section>
+  <section class="login" aria-labelledby="loginTitle">
+    <div class="eyebrow">Bienvenue</div>
+    <h2 id="loginTitle">Connexion</h2>
+    <p class="subtitle">Connectez-vous à votre espace TeamFlow.</p>
+    <form id="loginForm" novalidate>
+      <div class="field"><label for="username">Nom d’utilisateur</label><div class="input-wrap"><input id="username" name="username" autocomplete="username" placeholder="Votre nom d’utilisateur" required minlength="2" /></div></div>
+      <div class="field"><label for="password">Mot de passe</label><div class="input-wrap password"><input type="password" id="password" name="password" autocomplete="current-password" placeholder="Votre mot de passe" required minlength="6" /><button class="toggle" type="button" id="togglePassword" aria-label="Afficher le mot de passe">Afficher</button></div></div>
+      <button class="submit" type="submit" id="submit">Se connecter</button>
+      <p class="message" id="message" role="status" aria-live="polite"></p>
+    </form>
+    <div class="foot">Un espace de travail conçu pour votre équipe.</div>
+  </section>
+</main>
+<script>
+  const form = document.getElementById('loginForm');
+  const password = document.getElementById('password');
+  const toggle = document.getElementById('togglePassword');
+  const message = document.getElementById('message');
+  toggle.addEventListener('click', () => {
+    const showing = password.type === 'password';
+    password.type = showing ? 'text' : 'password';
+    toggle.textContent = showing ? 'Masquer' : 'Afficher';
+    toggle.setAttribute('aria-label', showing ? 'Masquer le mot de passe' : 'Afficher le mot de passe');
+  });
+  form.addEventListener('submit', event => {
+    event.preventDefault();
+    message.className = 'message';
+    const username = form.username.value.trim();
+    const passcode = password.value;
+    if (username.length < 2 || passcode.length < 6) {
+      message.classList.add('error');
+      message.textContent = 'Saisissez un nom d’utilisateur et un mot de passe de 6 caractères minimum.';
+      return;
+    }
+    message.classList.add('success');
+    message.textContent = 'Formulaire validé. Connectez une API d’authentification pour activer la connexion sécurisée.';
+    // Connecter ici votre backend (API d'authentification). Ne jamais stocker de mots de passe côté navigateur.
+  });
+</script>
+</body>
+</html>
