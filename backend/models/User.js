@@ -38,6 +38,11 @@ const userSchema = new mongoose.Schema(
     avatar: { type: String, default: "" },
     failedLoginAttempts: { type: Number, default: 0 },
     lockUntil: { type: Date, default: null },
+    tokenVersion: { type: Number, default: 0 },
+    /* SOCIAL LOGIN: uncomment later
+    googleId: { type: String, unique: true, sparse: true },
+    facebookId: { type: String, unique: true, sparse: true },
+*/
   },
   { timestamps: true }
 );

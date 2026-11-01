@@ -57,3 +57,6 @@ connectDB()
     console.error("DB connection failed:", err.message);
     process.exit(1);
   });
+
+  // const passport = require("./config/passport"); // parked: social login
+// app.use(passport.initialize()); // parked

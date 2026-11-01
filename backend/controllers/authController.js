@@ -1,14 +1,25 @@
-// 
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const { validationResult } = require("express-validator");
 const User = require("../models/User");
-const { issueTokens, issueAccessToken, clearTokens } = require("../utils/tokens");
+const RefreshToken = require("../models/RefreshToken");
+// SOCIAL LOGIN: add `socialCallback` to the controller import above when enabling
+const {
+  issueTokens,
+  issueAccessToken,
+  issueRefreshToken,
+  clearTokens,
+  revokeAllSessions,
+  sha256,
+} = require("../utils/tokens");
 
-// Compared against when the email is unknown, so response time doesn't reveal which emails exist
 const DUMMY_HASH = bcrypt.hashSync("dummy-password-for-timing", 12);
 
+// Two refreshes fired at the same moment (two tabs) should not be mistaken for theft
+const REUSE_GRACE_MS = 10 * 1000;
+
 const publicUser = (u) => ({ id: u._id, name: u.name, email: u.email, role: u.role });
+const notAuth = (res) => res.status(401).json({ message: "Not authenticated" });
 
 exports.register = async (req, res) => {
   const errors = validationResult(req);
@@ -17,7 +28,7 @@ exports.register = async (req, res) => {
   }
 
   try {
-    const { name, email, password } = req.body; // email already lowercased by the route
+    const { name, email, password } = req.body;
 
     if (await User.exists({ email })) {
       return res.status(409).json({ message: "Email already registered" });
@@ -26,7 +37,7 @@ exports.register = async (req, res) => {
     const passwordHash = await bcrypt.hash(password, 12);
     const user = await User.create({ name, email, passwordHash });
 
-    issueTokens(res, user);
+    await issueTokens(res, user);
     res.status(201).json({ user: publicUser(user) });
   } catch (err) {
     if (err.code === 11000) {
@@ -63,7 +74,7 @@ exports.login = async (req, res) => {
     }
 
     await user.resetAttempts();
-    issueTokens(res, user);
+    await issueTokens(res, user);
     return res.json({ success: true, user: publicUser(user) });
   } catch (err) {
     console.error("Login error:", err.message);
@@ -77,8 +88,10 @@ exports.session = async (req, res) => {
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ["HS256"] });
-    const user = await User.findById(decoded.id).select("_id name email role");
-    if (!user) return res.json({ success: false, user: null });
+    const user = await User.findById(decoded.id).select("_id name email role tokenVersion");
+    if (!user || (user.tokenVersion ?? 0) !== (decoded.tv ?? 0)) {
+      return res.json({ success: false, user: null });
+    }
     return res.json({ success: true, user: publicUser(user) });
   } catch {
     return res.json({ success: false, user: null });
@@ -87,26 +100,116 @@ exports.session = async (req, res) => {
 
 exports.refresh = async (req, res) => {
   const token = req.cookies?.refreshToken;
-  if (!token) return res.status(401).json({ message: "Not authenticated" });
+  if (!token) return notAuth(res);
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_REFRESH_SECRET, { algorithms: ["HS256"] });
-    const user = await User.findById(decoded.id).select("_id");
-    if (!user) {
+    if (!decoded.jti || !decoded.fam) throw new Error("Old token format");
+
+    const tokenHash = sha256(decoded.jti);
+
+    // Atomically claim the token: only one request can win this
+    const claimed = await RefreshToken.findOneAndUpdate(
+      { tokenHash, usedAt: null },
+      { usedAt: new Date() }
+    );
+
+    if (!claimed) {
+      const existing = await RefreshToken.findOne({ tokenHash }).select("usedAt");
+
+      // Used a moment ago: a parallel request, not theft
+      if (existing?.usedAt && Date.now() - existing.usedAt.getTime() < REUSE_GRACE_MS) {
+        return notAuth(res);
+      }
+
+      // Used long ago, or unknown: treat as theft and kill the whole family
+      await RefreshToken.deleteMany({ family: decoded.fam });
       clearTokens(res);
-      return res.status(401).json({ message: "Not authenticated" });
+      return notAuth(res);
     }
+
+    const user = await User.findById(decoded.id).select("_id tokenVersion");
+    if (!user || (user.tokenVersion ?? 0) !== (decoded.tv ?? 0)) {
+      await RefreshToken.deleteMany({ family: decoded.fam });
+      clearTokens(res);
+      return notAuth(res);
+    }
+
     issueAccessToken(res, user);
+    await issueRefreshToken(res, user, decoded.fam); // rotation: same family, new token
     return res.json({ success: true });
   } catch {
     clearTokens(res);
-    return res.status(401).json({ message: "Not authenticated" });
+    return notAuth(res);
   }
 };
 
-exports.logout = (req, res) => {
+exports.logout = async (req, res) => {
+  const token = req.cookies?.refreshToken;
+  if (token) {
+    try {
+      const decoded = jwt.verify(token, process.env.JWT_REFRESH_SECRET, { algorithms: ["HS256"] });
+      if (decoded.fam) await RefreshToken.deleteMany({ family: decoded.fam });
+    } catch {
+      /* invalid or expired: nothing to delete */
+    }
+  }
   clearTokens(res);
   return res.json({ success: true, message: "Logged out" });
 };
 
-// keep your existing socialCallback here, unchanged (parked)
+exports.logoutAll = async (req, res) => {
+  try {
+    await revokeAllSessions(req.user._id);
+    clearTokens(res);
+    return res.json({ success: true, message: "Logged out everywhere" });
+  } catch (err) {
+    console.error("Logout-all error:", err.message);
+    return res.status(500).json({ message: "Server error" });
+  }
+};
+
+exports.changePassword = async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ message: errors.array()[0].msg });
+  }
+
+  try {
+    const { currentPassword, newPassword } = req.body;
+    const user = await User.findById(req.user._id).select("+passwordHash");
+
+    if (!user?.passwordHash || !(await bcrypt.compare(currentPassword, user.passwordHash))) {
+      return res.status(401).json({ message: "Current password is incorrect" });
+    }
+    if (currentPassword === newPassword) {
+      return res.status(400).json({ message: "New password must be different" });
+    }
+
+    user.passwordHash = await bcrypt.hash(newPassword, 12);
+    await user.save();
+
+    await revokeAllSessions(user._id);
+    const fresh = await User.findById(user._id).select("_id tokenVersion");
+    await issueTokens(res, fresh);
+
+    return res.json({ success: true, message: "Password changed" });
+  } catch (err) {
+    console.error("Change-password error:", err.message);
+    return res.status(500).json({ message: "Server error" });
+  }
+};
+/* SOCIAL LOGIN: uncomment later
+exports.socialCallback = async (req, res) => {
+  try {
+    res.clearCookie("oauth_state");
+    await issueTokens(res, req.user); // must be awaited: it writes to the database
+    res.redirect(`${process.env.CLIENT_URL}/`); // landing page; never put a token in the URL
+  } catch (err) {
+    console.error("Social callback error:", err.message);
+    res.redirect(`${process.env.CLIENT_URL}/login?error=oauth_failed`);
+  }
+};
+*/
+// socialCallback is parked with the Google and Facebook routes.
+// Add it back only when you uncomment those routes.
