@@ -3,7 +3,6 @@ const jwt = require("jsonwebtoken");
 const { validationResult } = require("express-validator");
 const User = require("../models/User");
 const RefreshToken = require("../models/RefreshToken");
-// SOCIAL LOGIN: add `socialCallback` to the controller import above when enabling
 const {
   issueTokens,
   issueAccessToken,
@@ -150,9 +149,7 @@ exports.logout = async (req, res) => {
     try {
       const decoded = jwt.verify(token, process.env.JWT_REFRESH_SECRET, { algorithms: ["HS256"] });
       if (decoded.fam) await RefreshToken.deleteMany({ family: decoded.fam });
-    } catch {
-      /* invalid or expired: nothing to delete */
-    }
+    } catch {      /* invalid or expired: nothing to delete */ }
   }
   clearTokens(res);
   return res.json({ success: true, message: "Logged out" });
@@ -199,7 +196,7 @@ exports.changePassword = async (req, res) => {
     return res.status(500).json({ message: "Server error" });
   }
 };
-/* SOCIAL LOGIN: uncomment later
+// SOCIAL LOGIN: uncomment later
 exports.socialCallback = async (req, res) => {
   try {
     res.clearCookie("oauth_state");
@@ -210,6 +207,86 @@ exports.socialCallback = async (req, res) => {
     res.redirect(`${process.env.CLIENT_URL}/login?error=oauth_failed`);
   }
 };
-*/
+exports.forgotPassword = async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    // 1. Find user by email using Mongoose
+    const user = await User.findOne({ email });
+
+    // SECURITY BEST PRACTICE: Return a generic message to prevent user enumeration
+    if (!user) {
+      return res.status(200).json({
+        message: "If an account with that email exists, a password reset link has been sent.",
+      });
+    }
+
+    // 2. Generate a secure random reset token
+    const resetToken = crypto.randomBytes(32).toString("hex");
+
+    // 3. Hash the token before saving it to the database for security
+    const hashedToken = crypto
+      .createHash("sha256")
+      .update(resetToken)
+      .digest("hex");
+
+    // 4. Set token expiration (10 minutes from now)
+    user.resetPasswordToken = hashedToken;
+    user.resetPasswordExpires = Date.now() + 10 * 60 * 1000; // Milliseconds timestamp for MongoDB
+
+    await user.save();
+
+    // 5. Construct the reset URL for your frontend
+    const resetUrl = `${process.env.CLIENT_URL}/reset-password?token=${resetToken}`;
+
+    // For local development: Check your backend terminal for this link
+    console.log(`[DEV] Password Reset URL: ${resetUrl}`);
+
+    return res.status(200).json({
+      message: "If an account with that email exists, a password reset link has been sent.",
+    });
+  } catch (error) {
+    console.error("Forgot password error:", error);
+    return res.status(500).json({ message: "Internal server error." });
+  }
+};
+
+/**
+ * Handle resetting the password using the token sent via email.
+ */
+exports.resetPassword = async (req, res) => {
+  try {
+    const { token } = req.params;
+    const { password } = req.body;
+
+    // 1. Hash the incoming token from params to match the database record
+    const hashedToken = crypto
+      .createHash("sha256")
+      .update(token)
+      .digest("hex");
+
+    // 2. Find user with valid token and check if expiration ($gt) is still in the future
+    const user = await User.findOne({
+      resetPasswordToken: hashedToken,
+      resetPasswordExpires: { $gt: Date.now() },
+    });
+
+    if (!user) {
+      return res.status(400).json({ message: "Invalid or expired password reset token." });
+    }
+
+    // 3. Update password
+    user.passwordHash = await bcrypt.hash(password, 12);
+    user.resetPasswordToken = undefined;
+    user.resetPasswordExpires = undefined;
+
+    await user.save();
+
+    return res.status(200).json({ message: "Password successfully reset. You can now log in." });
+  } catch (error) {
+    console.error("Reset password error:", error);
+    return res.status(500).json({ message: "Internal server error." });
+  }
+};
 // socialCallback is parked with the Google and Facebook routes.
 // Add it back only when you uncomment those routes.

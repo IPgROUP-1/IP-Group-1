@@ -1,6 +1,8 @@
 const router = require("express").Router();
 const rateLimit = require("express-rate-limit");
 const { body } = require("express-validator");
+const crypto = require("crypto");
+const passport = require("../config/passport");
 const {
   register,
   login,
@@ -9,6 +11,9 @@ const {
   logout,
   logoutAll,
   changePassword,
+  socialCallback,
+  forgotPassword,
+  resetPassword,
 } = require("../controllers/authController");
 const { protect } = require("../middleware/authMiddleware");
 
@@ -52,68 +57,6 @@ const passwordLimiter = rateLimit({
   legacyHeaders: false,
   message: tooMany,
 });
-
-// bcrypt reads only 72 BYTES, and emoji or accented letters use several bytes each
-const maxBytes72 = (v) => Buffer.byteLength(v, "utf8") <= 72;
-
-const emailRule = () =>
-  body("email")
-    .isString().withMessage("Enter a valid email").bail()
-    .trim()
-    .isEmail().withMessage("Enter a valid email")
-    .isLength({ max: 254 }).withMessage("Enter a valid email")
-    .customSanitizer((v) => v.toLowerCase());
-
-const newPasswordRule = (field) =>
-  body(field).isString().withMessage("Password is required").bail()
-    .isLength({ min: 8, max: 72 }).withMessage("Password must be 8 to 72 characters")
-    .custom(maxBytes72).withMessage("Password is too long")
-    .matches(/[a-z]/).withMessage("Password needs a lowercase letter")
-    .matches(/[A-Z]/).withMessage("Password needs an uppercase letter")
-    .matches(/\d/).withMessage("Password needs a number");
-
-router.post(
-  "/register",
-  registerLimiter,
-  [
-    body("name").isString().withMessage("Name is required").bail()
-      .trim().isLength({ min: 2, max: 50 }).withMessage("Name must be 2 to 50 characters"),
-    emailRule(),
-    newPasswordRule("password"),
-  ],
-  register
-);
-
-router.post(
-  "/login",
-  loginLimiter,
-  emailLimiter,
-  [
-    emailRule(),
-    body("password").isString().isLength({ min: 1, max: 72 }).custom(maxBytes72),
-  ],
-  login
-);
-
-router.get("/session", session);
-router.post("/refresh", refresh);
-router.post("/logout", logout);
-router.post("/logout-all", protect, logoutAll);
-router.post(
-  "/change-password",
-  protect,
-  passwordLimiter,
-  [
-    body("currentPassword").isString().isLength({ min: 1, max: 72 }),
-    newPasswordRule("newPassword"),
-  ],
-  changePassword
-);
-/* SOCIAL LOGIN: uncomment later
-const crypto = require("crypto");
-const passport = require("../config/passport");
-*/
-/* SOCIAL LOGIN: uncomment later (together with the imports at the top)
 const enabled = {
   google: !!process.env.GOOGLE_CLIENT_ID,
   facebook: !!process.env.FACEBOOK_APP_ID,
@@ -146,9 +89,86 @@ const oauthCallback = (provider) => [
   socialCallback,
 ];
 
+// bcrypt reads only 72 BYTES, and emoji or accented letters use several bytes each
+const maxBytes72 = (v) => Buffer.byteLength(v, "utf8") <= 72;
+
+const emailRule = () =>
+  body("email")
+    .isString().withMessage("Enter a valid email").bail()
+    .trim()
+    .isEmail().withMessage("Enter a valid email")
+    .isLength({ max: 254 }).withMessage("Enter a valid email")
+    .customSanitizer((v) => v.toLowerCase());
+
+const newPasswordRule = (field) =>
+  body(field).isString().withMessage("Password is required").bail()
+    .isLength({ min: 8, max: 72 }).withMessage("Password must be 8 to 72 characters")
+    .custom(maxBytes72).withMessage("Password is too long")
+    .matches(/[a-z]/).withMessage("Password needs a lowercase letter")
+    .matches(/[A-Z]/).withMessage("Password needs an uppercase letter")
+    .matches(/\d/).withMessage("Password needs a number");
+
+const forgotPasswordLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  limit: 3, // Max 3 attempts per window
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: tooMany,
+});
+router.post(
+  "/register",
+  registerLimiter,
+  [
+    body("name").isString().withMessage("Name is required").bail()
+      .trim().isLength({ min: 2, max: 50 }).withMessage("Name must be 2 to 50 characters"),
+    emailRule(),
+    newPasswordRule("password"),
+  ],
+  register
+);
+
+router.post(
+  "/login",
+  loginLimiter,
+  emailLimiter,
+  [
+    emailRule(),
+    body("password").isString().isLength({ min: 1, max: 72 }).custom(maxBytes72),
+  ],
+  login
+);
+router.post(
+  "/forgot-password",
+  forgotPasswordLimiter,
+  [emailRule()],
+  forgotPassword
+);
+
+router.post(
+  "/reset-password/:token",
+  passwordLimiter,
+  [newPasswordRule("password")],
+  resetPassword
+);
+
+router.get("/session", session);
+router.post("/refresh", refresh);
+router.post("/logout", logout);
+router.post("/logout-all", protect, logoutAll);
+router.post(
+  "/change-password",
+  protect,
+  passwordLimiter,
+  [
+    body("currentPassword").isString().isLength({ min: 1, max: 72 }),
+    newPasswordRule("newPassword"),
+  ],
+  changePassword
+);
 router.get("/google", oauthStart("google", ["profile", "email"]));
 router.get("/google/callback", ...oauthCallback("google"));
-router.get("/facebook", oauthStart("facebook", ["email"]));
-router.get("/facebook/callback", ...oauthCallback("facebook"));
-*/
+// 
+// router.get("/facebook", oauthStart("facebook", ["email"]));
+// router.get("/facebook/callback", ...oauthCallback("facebook"));
+// 
 module.exports = router;

@@ -39,10 +39,12 @@ const userSchema = new mongoose.Schema(
     failedLoginAttempts: { type: Number, default: 0 },
     lockUntil: { type: Date, default: null },
     tokenVersion: { type: Number, default: 0 },
-    /* SOCIAL LOGIN: uncomment later
+    //SOCIAL LOGIN: uncomment later
     googleId: { type: String, unique: true, sparse: true },
     facebookId: { type: String, unique: true, sparse: true },
-*/
+    resetPasswordToken: {type: String, default: null, select: false},
+  resetPasswordExpires: {type: Date,default: null, select: false},
+
   },
   { timestamps: true }
 );

@@ -7,7 +7,7 @@ const cors = require("cors");
 const helmet = require("helmet");
 const cookieParser = require("cookie-parser");
 const connectDB = require("./config/db");
-// const passport = require("./config/passport"); // parked: social login
+const passport = require("./config/passport"); // parked: social login
 
 const isProd = process.env.NODE_ENV === "production";
 const PORT = process.env.PORT || 5000;
@@ -37,7 +37,7 @@ app.use(helmet());
 app.use(cors({ origin: CLIENT_URL, credentials: true })); // only your frontend
 app.use(express.json({ limit: "10kb" }));                  // reject huge payloads
 app.use(cookieParser());
-// app.use(passport.initialize()); // parked
+app.use(passport.initialize()); // parked
 
 app.get("/health", (req, res) => res.json({ status: "ok" }));
 app.use("/api/auth", require("./routes/authRoutes"));
@@ -57,6 +57,3 @@ connectDB()
     console.error("DB connection failed:", err.message);
     process.exit(1);
   });
-
-  // const passport = require("./config/passport"); // parked: social login
-// app.use(passport.initialize()); // parked
